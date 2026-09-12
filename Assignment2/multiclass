@@ -1,0 +1,141 @@
+
+#the softmax function for multinomial logistic regression
+def softmax(x):
+    #does the calculatoins for each row instead of making 10 classifiers
+    numerator = np.exp(x-np.max(x,axis=1,keepdims=True))
+    return numerator / np.sum(numerator, axis=1, keepdims=True)
+
+class NumpyMulti(NumpyClassifier):
+    def __init__(self, bias=-1, numEpochs=2):
+        self.bias=bias
+        self.numEpocks=numEpochs
+
+    def one_hot_encode(self, classes):
+        numClasses = max(classes)+1
+        numInstances = len(classes)
+        onehot = np.zeros((numInstances, numClasses))
+        for i in range(numInstances):
+            onehot[i][classes[i]] = 1
+        return onehot
+    
+    def forward(self, X):
+        # print("in forward")
+        y = softmax(X @ self.weights)
+        # print("after y", y)
+        return y
+
+    def fit(self, X_train, t_multi, eta = 0.1, epochs=10, X_val = None, t_val = None, tol=0.1, n_epochs_no_update= 2):
+        """X_train is a Nxm matrix, N data points, m features
+        t_train is avector of length N,
+        the targets values for the training data"""
+        self.numEpocks = 0
+        losses = []
+        losses_val = []
+        (N, m) = X_train.shape
+        X_train = add_bias(X_train, self.bias)
+        self.weights = weights = np.zeros((m + 1, max(t_multi_train+1)))
+        # self.weights = weights_v = np.zeros((m + 1, max(t_multi_val+1)))
+        onehot_t = self.one_hot_encode(t_multi_train)
+        onehot_v = self.one_hot_encode(t_multi_val)
+        accuracy_train = []
+        accuracy_val = []
+        index = 0
+        n_epochs = n_epochs_no_update
+
+        while(n_epochs>0):
+            #sjekk hvorfor du endra
+            weights -= eta * X_train.T @ (self.forward(X_train) - onehot_t)/N
+            pred_prob = self.predict_probabilities(X_train)
+            losses.append(np.mean(np.sum(-onehot_t*np.log(pred_prob)-(1-onehot_t)*(np.log(1-pred_prob)))))
+            accuracy_train.append(accuracy(self.predict(X_train), t_multi))
+            # print(f"after appending loss and accuracy: \ntmulti:{len(t_multi)}\nX_train")
+            #no update:
+            if index >0 and (losses[index-1]-losses[index]<tol):
+                n_epochs-=1
+            elif index>0:
+                n_epochs = n_epochs_no_update
+            self.numEpocks+=1
+            index += 1
+            # print(f"accuracy for epoch {e}, train: {accuracy(self.predict(X_train), t_multi)}")
+
+            # using the weights learned from the trainingset
+            if X_val is not None and t_val is not None:
+                pred_prob = self.predict_probabilities(X_val)
+                # losses.append(-np.mean(onehot_t*np.log(pred_prob)+(1-onehot_t)*(np.log(1-pred_prob))))
+                losses_val.append(np.mean(np.sum(-onehot_v*np.log(pred_prob)-(1-onehot_v)*(np.log(1-pred_prob)))))
+                accuracy_val.append(accuracy(self.predict(X_val), t_val))
+                # print(f"accuracy for epoch {e}, val: {accuracy(self.predict(X_val), t_val)}")
+            self.numEpocks = len(losses)
+        return losses, losses_val, accuracy_train, accuracy_val
+
+    def predict(self, x):
+        """X is a Kxm matrix for some K>=1
+        predict the value for each point in X"""
+        if x.shape[1] == 2:
+            z = add_bias(x, self.bias)
+        else:
+            z = x
+        return np.argmax(self.predict_probabilities(z), axis=1)
+    
+    #when t = 1, P(Cj|x) = y = e^z/sum(e^z) = forward(z)
+    #note: x should have already been multiplied with the weights
+    def predict_probabilities(self, x):
+        """X is a Kxm matrix for some K>=1
+        predict the probability of the value belonging to each class"""
+        if x.shape[1] == 2:
+            z = add_bias(x, self.bias)
+        else:
+            z = x
+        y = self.forward(z)
+        return y
+    
+    #defining standard scaler
+    def scale_multi(self, data):
+        mean = np.mean(data, axis=0)
+        stdDeviation = np.std(data, axis=0)
+        output = np.zeros([len(data),len(data[0])])
+        for i in range(len(data[0])):
+            for j in range(len(data)):
+                output[j][i] = (data[j][i]-mean[i])/stdDeviation[i]
+        return output
+    
+    # def print_performance_multi(self, bestList):
+    def print_performance_multi(self, x_train, t_train, x_val, t_val):
+        acc_t = accuracy(self.predict(x_train), t_train)
+        acc_v = accuracy(self.predict(x_val), t_val)
+        print("Accuracy for trainingset",acc_t)
+        print("Accuracy for validationset", acc_v)
+
+    def plot_fitness_vs_epochs(self, loss_t, loss_v):
+        epc = list(range(len(loss_t)))
+        print(len(loss_t)==len(loss_v))
+        plt.figure(figsize=(12,8))
+        plt.plot(epc, loss_t, label=f'Training set')
+        plt.plot(epc, loss_v, label=f'Validation set')
+        plt.xlabel("Epochs")
+        plt.ylabel("Loss")
+        plt.grid(True)
+        plt.legend()
+        plt.show()
+    
+    def plot_acc_vs_epochs(self, acc_t, acc_v):
+        epc = list(range(len(acc_t)))
+        plt.figure(figsize=(12,8))
+        plt.plot(epc, acc_t, label=f'Training set')
+        plt.plot(epc, acc_v, label=f'Validation set')
+        plt.xlabel("Epochs")
+        plt.ylabel("Accuracy")
+        plt.grid(True)
+        plt.legend()
+        plt.show()
+
+multi_cl = NumpyMulti()
+multi_cl.scale_multi(X_train)
+loss_t, loss_v, acc_t, acc_v = multi_cl.fit(X_train, t_multi_train, X_val=X_val, t_val=t_multi_val, eta=0.001, tol=0.3)
+multi_cl.print_performance_multi(X_train, t_multi_train, X_val, t_multi_val)
+plot_decision_regions(X_train, t_multi_train, multi_cl)
+plot_decision_regions(X_val, t_multi_val, multi_cl)
+
+#cheching that it improves
+multi_cl.plot_fitness_vs_epochs(loss_t, loss_v)
+multi_cl.plot_acc_vs_epochs(acc_t, acc_v)
